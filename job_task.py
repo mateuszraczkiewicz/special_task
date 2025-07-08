@@ -41,6 +41,35 @@ def barplot(data_frame, kategoria, ax, row_index, column_index, color, mean=1, w
     ax[row_index, column_index].set_xlabel(kategoria)
     ax[row_index, column_index].set_ylabel('Liczba zakupów')
     
+def Sprawdzanie_przetrenowania(model, X, y):
+    # Predykcja
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+
+    # Klasyfikacja: metryki
+    print("Zbiór treningowy")
+    print(classification_report(y_train, y_train_pred))
+    print("ROC AUC (train):", roc_auc_score(y_train, model.predict_proba(X_train)[:, 1]))
+
+    print("\nZbiór testowy")
+    print(classification_report(y_test, y_test_pred))
+    print("ROC AUC (test):", roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
+
+    # ROC Curve
+    fpr_train, tpr_train, _ = roc_curve(y_train, model.predict_proba(X_train)[:, 1])
+    fpr_test, tpr_test, _ = roc_curve(y_test, model.predict_proba(X_test)[:, 1])
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(fpr_train, tpr_train, label='Train ROC Curve', linestyle='--', color='blue')
+    plt.plot(fpr_test, tpr_test, label='Test ROC Curve', color='green')
+    plt.plot([0, 1], [0, 1], 'k--', alpha=0.6)
+    plt.title('ROC Curve')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.show()
 
 # Zczytanie danych i pierwsze spojrzenie na dane
 df = pd.read_csv('dane_zakupowe.csv', sep=';')
@@ -77,9 +106,9 @@ plt.style.use('seaborn-v0_8')
 Histogramy, axes = plt.subplots(2, 2, figsize=(14, 9))
 
 histogram(wiek, axes, 0, 0, 30, 'skyblue', 'Histogram wieku klientów', 'Wiek klientów')
-histogram(przychod, axes, 0, 1, 30, 'cyan', 'Histogram przychodu klientów', 'PRzychód')
-histogram(czas_na_stronie, axes, 1, 0, 30,'lime', 'Histogram czasu na stronie klienta', 'Czas na stronie [min]')
-histogram(liczba_wizyt, axes, 1, 1, 20, 'springgreen', 'Histogram lyczby wizyt klientów', 'Liczba klientów')
+histogram(przychod, axes, 0, 1, 30, 'cyan', 'Histogram przychodu klientów', 'Przychód klientów')
+histogram(czas_na_stronie, axes, 1, 0, 30,'lime', 'Histogram czasu na stronie klienta', 'Czas na stronie klientów [min]')
+histogram(liczba_wizyt, axes, 1, 1, 20, 'springgreen', 'Histogram liczby wizyt klientów', 'Liczba wizyt klientów')
 
 
 plt.tight_layout()
@@ -149,10 +178,7 @@ axes[0].pie(kupil.value_counts(),
         startangle=140,
         shadow=True,
         wedgeprops={'edgecolor': 'white'})
-
-plt.title('Udział klientów: kupił vs. nie kupił', fontsize=14, fontweight='bold')
-
-
+axes[0].set_title('Udział klientów: kupił vs. nie kupił')
 
 # Podział na kolumny X i y
 X = df.loc[:, df.columns != 'kupil']
@@ -162,8 +188,8 @@ print(y)
 print(kupil.value_counts())
 
 # Widzmy że dane są niezbalansowane. Większa część decyzji to nie kupienie usług. By poprwaić detekcję modelu wykorzystamy oversampling, by powiększyć zbiór 'kupil'
-ros = RandomUnderSampler(sampling_strategy=1)
-# rus = RandomUnderSampler(sampling_strategy=1) - dla under samplingu wyniki dla RFC i XGB są gorsze 
+ros = RandomOverSampler(sampling_strategy=1)
+# ros = RandomUnderSampler(sampling_strategy=1) - dla under samplingu wyniki dla RFC i XGB są gorsze 
 X_res, y_res = ros.fit_resample(X, y)
 print(X_res)
 print(y_res)
@@ -178,68 +204,83 @@ axes[1].pie(y_res.value_counts(),
         startangle=140,
         shadow=True,
         wedgeprops={'edgecolor': 'white'})
+axes[1].set_title('Udział klientów: kupił vs. nie kupił (po oveersamplingu)')
 
-plt.title('Udział klientów: kupił vs. nie kupił (po undersamplingu)', fontsize=14, fontweight='bold')
+
 plt.tight_layout()
 plt.show()
 
 # 5. Podział danych
 X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.2, random_state=42)
 
-# Trening modelu
-rf = RandomForestClassifier(random_state=42)
+
+# Model 1 - Logistic Regression
+logreg = LogisticRegression()
+logreg.fit(X_train, y_train)
+y_pred_logreg = logreg.predict(X_test)
+
+print("Regresja Logiczna")
+print(classification_report(y_test, y_pred_logreg))
+print("ROC AUC:", roc_auc_score(y_test, logreg.predict_proba(X_test)[:,1]))
+
+# Model 2 - Random Forest
+rf = RandomForestClassifier(n_estimators=200, random_state=42, max_depth=20, min_samples_leaf=1, min_samples_split=5)
+# rf = RandomForestClassifier(n_estimators=100)
 rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
 
-# Predykcja
-y_train_pred = rf.predict(X_train)
-y_test_pred = rf.predict(X_test)
+print("\nRandom Forsest")
+print(classification_report(y_test, y_pred_rf))
+print("ROC AUC:", roc_auc_score(y_test, rf.predict_proba(X_test)[:,1]))
 
-# === Klasyfikacja: metryki ===
-print("=== TRAIN SET ===")
-print(classification_report(y_train, y_train_pred))
-print("ROC AUC (train):", roc_auc_score(y_train, rf.predict_proba(X_train)[:, 1]))
 
-print("\n=== TEST SET ===")
-print(classification_report(y_test, y_test_pred))
-print("ROC AUC (test):", roc_auc_score(y_test, rf.predict_proba(X_test)[:, 1]))
+# Model 3 - XGBoost
+xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')
+xgb.fit(X_train, y_train)
+y_pred_xgb = xgb.predict(X_test)
 
-# === ROC Curve ===
-fpr_train, tpr_train, _ = roc_curve(y_train, rf.predict_proba(X_train)[:, 1])
-fpr_test, tpr_test, _ = roc_curve(y_test, rf.predict_proba(X_test)[:, 1])
+print("\nXGBoost")
+print(classification_report(y_test, y_pred_xgb))
+print("ROC AUC:", roc_auc_score(y_test, xgb.predict_proba(X_test)[:,1]))
 
-plt.figure(figsize=(8, 5))
-plt.plot(fpr_train, tpr_train, label='Train ROC Curve', linestyle='--', color='blue')
-plt.plot(fpr_test, tpr_test, label='Test ROC Curve', color='green')
-plt.plot([0, 1], [0, 1], 'k--', alpha=0.6)
-plt.title('ROC Curve - Random Forest')
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.legend()
-plt.grid(True, linestyle='--', alpha=0.5)
-plt.show()
-# # Model 1 - Logistic Regression
-# logreg = LogisticRegression()
-# logreg.fit(X_train, y_train)
-# y_pred_logreg = logreg.predict(X_test)
+# Sprawdzenie przetrenowania do RandomForest
+# Sprawdzanie_przetrenowania(rf, X_res, y_res)
 
-# # print("===== Logistic Regression =====")
-# # print(classification_report(y_test, y_pred_logreg))
-# # print("ROC AUC:", roc_auc_score(y_test, logreg.predict_proba(X_test)[:,1]))
+# # Parametry do tuningu
+# param_grid = {
+#     'n_estimators': [100, 200],
+#     'max_depth': [10, 20, None],
+#     'min_samples_split': [2, 5],
+#     'min_samples_leaf': [1, 5],
+#     'max_features': ['sqrt', 'log2']
+# }
 
-# # # Model 2 - Random Forest
-# # rf = RandomForestClassifier(n_estimators=100, random_state=42)
-# # rf.fit(X_train, y_train)
-# # y_pred_rf = rf.predict(X_test)
+# # Random Forest
+# rf = RandomForestClassifier(random_state=42)
 
-# # print("\n===== Random Forest Classifier =====")
-# # print(classification_report(y_test, y_pred_rf))
-# # print("ROC AUC:", roc_auc_score(y_test, rf.predict_proba(X_test)[:,1]))
+# # Grid Search z walidacją krzyżową
+# grid_search = GridSearchCV(estimator=rf,
+#                            param_grid=param_grid,
+#                            scoring='roc_auc',
+#                            cv=3,
+#                            n_jobs=-1,
+#                            verbose=2)
 
-# # # Model 3 - XGBoost
-# # xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')
-# # xgb.fit(X_train, y_train)
-# # y_pred_xgb = xgb.predict(X_test)
+# # Trening
+# grid_search.fit(X_train, y_train)
 
-# # print("\n===== XGBoost Classifier =====")
-# # print(classification_report(y_test, y_pred_xgb))
-# # print("ROC AUC:", roc_auc_score(y_test, xgb.predict_proba(X_test)[:,1]))
+# # Najlepszy model
+# best_rf = grid_search.best_estimator_
+# print("Najlepsze parametry:", grid_search.best_params_)
+
+# # Ocena na zbiorze testowym
+# y_pred = best_rf.predict(X_test)
+# y_proba = best_rf.predict_proba(X_test)[:, 1]
+
+# print("\nTEST SET")
+# print(classification_report(y_test, y_pred))
+# print("ROC AUC:", roc_auc_score(y_test, y_proba))
+
+
+
+
